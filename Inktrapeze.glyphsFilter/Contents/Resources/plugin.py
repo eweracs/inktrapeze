@@ -115,10 +115,6 @@ class Inktrapeze(FilterWithDialog):
 					self.create_inktrap_for_node(node, aperture, threshold, depth, curved)
 
 	@objc.python_method
-	def lerp(self, time, start, end):
-		return NSPoint(int((1 - time) * start.x + time * end.x), int((1 - time) * start.y + time * end.y))
-
-	@objc.python_method
 	def create_inktrap_for_node(self, node, aperture, threshold, depth, curved):
 		# there are three nodes that form a triangle. A center node ("node") and one left and one right node ("left_node" and
 		# "right_node")
