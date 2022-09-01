@@ -193,8 +193,11 @@ class Inktrapeze(FilterWithDialog):
 		                     * (semi_perimeter - dist_node_to_intersections) ** 2)
 
 		# check whether the circle area multiplied by the threshold is larger than the triangle area
-		if circle_area * threshold < triangle_area or depth == 0:
+		threshold_area = circle_area * threshold
+		if threshold_area < triangle_area or depth == 0:
 			return
+
+		actual_depth = depth * (triangle_area / threshold_area)
 
 		intersection_b_node = GSNode(intersection_b)
 		intersection_c_node = GSNode(intersection_c)
@@ -203,8 +206,8 @@ class Inktrapeze(FilterWithDialog):
 
 		# calculate the position of a new node which is on an extension of the line from the center of the
 		# intersections to the selected node
-		node.position = NSPoint(node.position.x - (center_between_intersections.x - node.position.x) * depth,
-		                        node.position.y - (center_between_intersections.y - node.position.y) * depth)
+		node.position = NSPoint(node.position.x - (center_between_intersections.x - node.position.x) * actual_depth,
+		                        node.position.y - (center_between_intersections.y - node.position.y) * actual_depth)
 
 		if curved:
 			# find the point which is on the extension of the line from prev_node to intersection_b. The extra
