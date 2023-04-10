@@ -42,7 +42,10 @@ class Inktrapeze(FilterWithDialog):
 	apertureTextField = objc.IBOutlet()
 	thresholdSlider = objc.IBOutlet()
 	depthSlider = objc.IBOutlet()
-	curvedCheckbox = objc.IBOutlet()
+	straightRadio = objc.IBOutlet()
+	curvedRadio = objc.IBOutlet()
+	flatTopRadio = objc.IBOutlet()
+	flatTopSizeTextField = objc.IBOutlet()
 
 	@objc.python_method
 	def settings(self):
@@ -88,8 +91,38 @@ class Inktrapeze(FilterWithDialog):
 		self.update()
 
 	@objc.IBAction
+	def setStraight_(self, sender):
+		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = bool(sender.state())
+		self.curvedRadio.setState_(False)
+		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = False
+		self.flatTopRadio.setState_(False)
+		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = False
+		self.flatTopSizeTextField.setEnabled_(False)
+		self.update()
+
+	@objc.IBAction
 	def setCurved_(self, sender):
 		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = bool(sender.state())
+		self.straightRadio.setState_(False)
+		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = False
+		self.flatTopRadio.setState_(False)
+		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = False
+		self.flatTopSizeTextField.setEnabled_(False)
+		self.update()
+
+	@objc.IBAction
+	def setFlatTop_(self, sender):
+		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = bool(sender.state())
+		self.straightRadio.setState_(False)
+		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = False
+		self.curvedRadio.setState_(False)
+		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = False
+		self.flatTopSizeTextField.setEnabled_(True)
+		self.update()
+
+	@objc.IBAction
+	def setFlatTopSize_(self, sender):
+		Glyphs.defaults["com.eweracs.inktrapeze.flatTopSize"] = float(sender.floatValue())
 		self.update()
 
 	@objc.python_method
@@ -97,25 +130,33 @@ class Inktrapeze(FilterWithDialog):
 		self.apertureTextField.setStringValue_(Glyphs.defaults["com.eweracs.inktrapeze.aperture"] or "20")
 		self.thresholdSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.threshold"] or 1)
 		self.depthSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.depth"] or 1)
-		self.curvedCheckbox.setState_(Glyphs.defaults["com.eweracs.inktrapeze.curved"] or False)
+		self.straightRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.straight"] or False)
+		self.curvedRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.curved"] or False)
+		self.flatTopRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] or False)
+		self.flatTopSizeTextField.setStringValue_(Glyphs.defaults["com.eweracs.inktrapeze.flatTopSize"] or "10")
 
 	# Actual filter
 	@objc.python_method
 	def filter(self, layer, inEditView, customParameters):
 		aperture = float(self.apertureTextField.floatValue())
-		threshold = float(self.thresholdSlider.floatValue())
+		threshold = 3 - float(self.thresholdSlider.floatValue())
 		depth = float(self.depthSlider.floatValue())
-		curved = bool(self.curvedCheckbox.state())
+		straight = bool(self.straightRadio.state())
+		curved = bool(self.curvedRadio.state())
+		flat_top = bool(self.flatTopRadio.state())
+		flat_top_size = float(self.flatTopSizeTextField.floatValue())
 
 		if not inEditView:
 			return False
 		for path in layer.paths:
 			for node in path.nodes:
 				if node.selected:
-					self.create_inktrap_for_node(node, aperture, threshold, depth, curved)
+					self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top,
+												 flat_top_size)
 
 	@objc.python_method
-	def create_inktrap_for_node(self, node, aperture, threshold, depth, curved):
+	def create_inktrap_for_node(self, node, aperture, threshold, depth, straight=True, curved=False, flat_top=False,
+								flat_top_size=5):
 		# there are three nodes that form a triangle. A center node ("node") and one left and one right node ("left_node" and
 		# "right_node")
 
@@ -185,15 +226,15 @@ class Inktrapeze(FilterWithDialog):
 
 		# find area of triangle of intersection points and selected node
 		semi_perimeter = (dist_between_intersections + dist_node_to_intersections * 2) / 2
-		triangle_area = sqrt(semi_perimeter * (semi_perimeter - dist_between_intersections)
-		                     * (semi_perimeter - dist_node_to_intersections) ** 2)
+		triangle_area = abs(sqrt(semi_perimeter * (semi_perimeter - dist_between_intersections)
+								 * (semi_perimeter - dist_node_to_intersections) ** 2))
 
 		# check whether the circle area multiplied by the threshold is larger than the triangle area
-		threshold_area = circle_area * threshold
-		if threshold_area < triangle_area or depth == 0:
+		threshold_area = abs(circle_area * threshold)
+		if threshold_area < triangle_area:
+			print("Threshold is too low. The circle will not fit in the triangle.")
+			print(threshold_area, triangle_area)
 			return
-
-		actual_depth = depth * (triangle_area / threshold_area)
 
 		intersection_b_node = GSNode(intersection_b)
 		intersection_c_node = GSNode(intersection_c)
@@ -202,8 +243,10 @@ class Inktrapeze(FilterWithDialog):
 
 		# calculate the position of a new node which is on an extension of the line from the center of the
 		# intersections to the selected node
-		node.position = NSPoint(node.position.x - (center_between_intersections.x - node.position.x) * actual_depth,
-		                        node.position.y - (center_between_intersections.y - node.position.y) * actual_depth)
+		new_node_position = NSPoint(node.position.x - (center_between_intersections.x - node.position.x) * depth,
+									node.position.y - (center_between_intersections.y - node.position.y) * depth)
+
+		node.position = new_node_position
 
 		if curved:
 			# find the point which is on the extension of the line from prev_node to intersection_b. The extra
@@ -248,6 +291,29 @@ class Inktrapeze(FilterWithDialog):
 			path.nodes[node.index + 2].smooth = True
 			path.nodes.insert(node.index + 1, GSNode(offcurve_4, OFFCURVE))
 			intersection_c_node.type = CURVE
+
+		if flat_top:
+			# divide flat_top_size by the aperture
+			move_factor = flat_top_size / aperture
+			# if the move factor is larger than 1, skip
+			if 1 > move_factor and flat_top_size > 0:
+				# calculate the coordinate of the point which is on the line intersection_b to new_node_position, at a
+				# percentage of move_factor away from new_node_position
+				reference_1 = NSPoint(new_node_position.x - (new_node_position.x - intersection_b.x) * move_factor,
+									  new_node_position.y - (new_node_position.y - intersection_b.y) * move_factor)
+				# calculate the coordinate of the point which is on the line intersection_c to new_node_position, at a
+				# percentage of move_factor away from new_node_position
+				reference_2 = NSPoint(new_node_position.x - (new_node_position.x - intersection_c.x) * move_factor,
+									  new_node_position.y - (new_node_position.y - intersection_c.y) * move_factor)
+				# insert these nodes on the paths, one after the current node and one before
+				path.insertNode_atIndex_(GSNode(reference_1), node.index)
+				path.insertNode_atIndex_(GSNode(reference_2), node.index + 1)
+			if flat_top_size > 0:
+				path.removeNode_(node)
+			if depth == 0:
+				path.removeNode_(intersection_b_node)
+				path.removeNode_(intersection_c_node)
+
 
 	@objc.python_method
 	def __file__(self):
