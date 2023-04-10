@@ -128,8 +128,8 @@ class Inktrapeze(FilterWithDialog):
 	@objc.python_method
 	def set_fields(self):
 		self.apertureTextField.setStringValue_(Glyphs.defaults["com.eweracs.inktrapeze.aperture"] or "20")
-		self.thresholdSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.threshold"] or 1)
-		self.depthSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.depth"] or 1)
+		self.thresholdSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.threshold"] or 0)
+		self.depthSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.depth"] or 0)
 		self.straightRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.straight"] or False)
 		self.curvedRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.curved"] or False)
 		self.flatTopRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] or False)
