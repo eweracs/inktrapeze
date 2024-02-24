@@ -29,12 +29,11 @@ from __future__ import division, print_function, unicode_literals
 import objc
 from GlyphsApp import *
 from GlyphsApp.plugins import *
-from math import sqrt, dist, sin, acos, degrees, radians, pi
-from Foundation import NSPoint
+from math import sqrt, dist, sin, acos, atan2, degrees, radians, cos, pi
+from Foundation import NSPoint, NSColor
 
 
 class Inktrapeze(FilterWithDialog):
-
 	# The NSView object from the User Interface. Keep this here!
 	dialog = objc.IBOutlet()
 
@@ -74,6 +73,7 @@ class Inktrapeze(FilterWithDialog):
 		self.set_fields()
 		# Set focus to text field
 		self.apertureTextField.becomeFirstResponder()
+		Glyphs.addCallback(self.draw_calculations, DRAWFOREGROUND)
 
 	@objc.IBAction
 	def setAperture_(self, sender):
@@ -144,15 +144,147 @@ class Inktrapeze(FilterWithDialog):
 		straight = bool(self.straightRadio.state())
 		curved = bool(self.curvedRadio.state())
 		flat_top = bool(self.flatTopRadio.state())
-		flat_top_size = float(self.flatTopSizeTextField.floatValue())
+		flat_top_size = int(self.flatTopSizeTextField.floatValue())
 
 		if not inEditView:
 			return False
 		for path in layer.paths:
 			for node in path.nodes:
 				if node.selected:
-					self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top,
-												 flat_top_size)
+					self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
+
+	@objc.python_method
+	def calculate_inktrap_position(self, node, prev_node, next_node, aperture, threshold, depth):
+		# calculate the distance between the other two nodes
+		dist_prev_node_to_next_node = distance(prev_node.position, next_node.position)
+		# calculate the distance between the prev node and the selected node
+		dist_current_node_to_prev_node = distance(node.position, prev_node.position)
+		# calculate the distance between the next node and the selected node
+		dist_current_node_next_node = distance(node.position, next_node.position)
+
+		if prev_node is None or next_node is None:
+			print("Node is not connected to other nodes.")
+			return
+		if prev_node.type == "offcurve" or next_node.type == "offcurve":
+			print("Node is an offcurve node.")
+			return
+
+		# calculate the angle at the selected node
+		angle_at_current_node = self.calculate_angle_at_node(node, prev_node, next_node)
+
+		# Construct a circle with the diameter of the aperture and see how far it can be pushed into the triangle at the
+		# selected node.
+		# Then calculate the distance from the intersection of the circle with the right line to the intersection with
+		# the left line.
+
+		# To achieve this, construct a right triangle with these points: center of circle, intersection with right line,
+		# the selected node. The angle at the intersection with both lines is 90 degrees. The angle at the selected
+		# node is half the original angle at the selected node and the angle at the circle center is 90 minus the angle
+		# at the selected node. The distance from the center of the circle to the intersection with any of the two lines
+		# is the radius of the circle.
+
+		# The distance from the selected node to either intersection point can be calculated using a triangle with the
+		# given parameters: the selected node, half the angle at the selected node, the radius of the circle.
+
+		distance_from_node_to_intersection = self.cathetus_for_cathetus_angle(aperture / 2, angle_at_current_node / 2)
+
+		# Then construct a triangle with the given parameters: the selected node, the angle at the selected node, the
+		# distance from the selected node to both intersection points with the circle. Calculate the area of this
+		# triangle.
+
+		# Calculate the angle of the line between the selected node and the previous node
+		angle_prev_node = self.calculate_angle(prev_node, node)
+
+		# First, calculate the node positions of the intersections with the circle
+		intersection_previous_node = self.position_for_angle_distance(
+			node, angle_prev_node, distance_from_node_to_intersection
+		)
+		intersection_next_node = self.position_for_angle_distance(
+			node, angle_prev_node + angle_at_current_node, distance_from_node_to_intersection
+		)
+
+		# calculate the distance between the intersections
+		dist_between_intersections = distance(intersection_previous_node, intersection_next_node)
+
+		# find area of triangle of intersection points and selected node
+		triangle_area = self.triangle_area(
+			dist_between_intersections,
+			dist_current_node_to_prev_node,
+			dist_current_node_next_node
+		)
+
+		# calculate distance of the center of the circle to the selected node
+		distance_circle_center_to_node = self.hypotenuse_for_cathetus_cathetus(aperture / 2,
+		                                                                       distance_from_node_to_intersection)
+
+		# calculate the position of the center of the circle
+		center_of_circle = self.position_for_angle_distance(
+			node, 90 - angle_at_current_node / 2, distance_circle_center_to_node
+		)
+
+		# check whether the distance from the circle center to the selected node divided by the aperture is smaller than
+		# the threshold, if so, skip.
+		# For example, if the threshold is 1, the selected node must be at least one aperture away from the center of
+		# the circle. The higher the threshold, the further away the selected node must be from the center of the circle
+		# before an inktrap is created.
+
+		if distance_circle_center_to_node / aperture < threshold:
+			print(distance_circle_center_to_node, aperture, threshold)
+			return
+
+		return center_of_circle, intersection_previous_node, intersection_next_node
+
+	@objc.python_method
+	def calculate_angle(self, node1, node2):
+		delta_y = node2.position.y - node1.position.y
+		delta_x = node2.position.x - node1.position.x
+		angle_rad = atan2(delta_y, delta_x)
+		angle_deg = degrees(angle_rad)
+		return angle_deg
+
+	@objc.python_method
+	def calculate_angle_at_node(self, node, prev_node, next_node):
+		# calculate the distance between the other two nodes
+		dist_prev_node_to_next_node = distance(prev_node.position, next_node.position)
+		# calculate the distance between the prev node and the selected node
+		dist_current_node_to_prev_node = distance(node.position, prev_node.position)
+		# calculate the distance between the next node and the selected node
+		dist_current_node_next_node = distance(node.position, next_node.position)
+		# calculate the angle at the selected node
+		angle_at_current_node = degrees(
+			acos(
+				(dist_current_node_to_prev_node ** 2 + dist_current_node_next_node ** 2 - dist_prev_node_to_next_node ** 2)
+				/ (2 * dist_current_node_to_prev_node * dist_current_node_next_node)
+			)
+		)
+
+		return angle_at_current_node
+
+	@objc.python_method
+	def position_for_angle_distance(self, node, angle, distance):
+		return NSPoint(node.position.x + distance * cos(radians(angle)), node.position.y + distance * sin(radians(angle)))
+
+	@objc.python_method
+	def cathetus_for_cathetus_angle(self, cathetus, angle):
+		return cathetus / sin(radians(angle))
+
+	@objc.python_method
+	def hypotenuse_for_cathetus_cathetus(self, cathetus1, cathetus2):
+		return sqrt(cathetus1 ** 2 + cathetus2 ** 2)
+
+	@objc.python_method
+	def triangle_area(self, a, b, c):
+		s = (a + b + c) / 2
+		return sqrt(s * (s - a) * (s - b) * (s - c))
+
+	@objc.python_method
+	def circle_area(self, radius):
+		return pi * radius ** 2
+
+	@objc.python_method
+	def calculate_intersection_path_time(self, node, other_node, intersection):
+		intersection_path_time = (distance(node.position, intersection) / distance(node.position, other_node.position))
+		return intersection_path_time
 
 	@objc.python_method
 	def create_inktrap_for_node(self, node, aperture, threshold, depth, straight=True, curved=False, flat_top=False,
@@ -165,81 +297,18 @@ class Inktrapeze(FilterWithDialog):
 		prev_node = node.prevNode
 		next_node = node.nextNode
 
-		if prev_node is None or next_node is None:
-			print("Node is not connected to other nodes.")
-			return
-		if prev_node.type == "offcurve" or next_node.type == "offcurve":
-			print("Node is an offcurve node.")
-			return
+		center_of_circle, intersection_previous_node, intersection_next_node = self.calculate_inktrap_position(
+			node, prev_node, next_node, aperture, threshold, depth
+		)
 
-		# calculate the distance between the left and right node
-		dist_prev_node_to_next_node = dist([prev_node.position.x, prev_node.position.y],
-		                                   [next_node.position.x, next_node.position.y])
-		# calculate the distance between the left node and the selected node
-		dist_current_node_to_prev_node = dist([node.position.x, node.position.y],
-		                                      [prev_node.position.x, prev_node.position.y])
-		# calculate the distance between the right node and the selected node
-		dist_current_node_next_node = dist([node.position.x, node.position.y],
-		                                   [next_node.position.x, next_node.position.y])
-
-		# calculate the angle at the selected node
-		angle_at_current_node = degrees(acos((dist_current_node_to_prev_node ** 2 + dist_current_node_next_node ** 2 -
-		                                      dist_prev_node_to_next_node ** 2) / (2 * dist_current_node_to_prev_node *
-		                                                                           dist_current_node_next_node)))
-
-		# see how far into the angle at the selected node the circle can be pushed, then calculate the intersections
-		# of the circle with the left line and right line
-		# calculate the size of the other two equal angles in the triangle which consists of the intersection points
-		# and the selected node
-		other_angles = (180 - angle_at_current_node) / 2
-		# make a right triangle using the diameter of the circle as the hypotenuse. The right angle will be at the
-		# intersection of the circle with the right line.
-		# calculate the angle in the triangle at the intersection of the circle with the right line
-		circle_angle = 90 - other_angles
-		# calculate the distance from the intersection of the circle with right line to the hypotenuse
-		circle_line_b = sin(circle_angle)
-		# calculate the distance from the intersection of the circle with right line to the intersection with left line
-		dist_between_intersections = sqrt(aperture ** 2 - circle_line_b ** 2)
-
-		# using the angle at node and the two other angles, as well as the line connecting the prev and next node,
-		# calculate the distance of the intersections to the selected node
-		dist_node_to_intersections = dist_between_intersections * sin(radians(other_angles)) / sin(radians(
-			angle_at_current_node))
-
-		# calculate the path time at which the intersection with line b is reached
-		factor_b = dist_node_to_intersections / dist_current_node_to_prev_node
-		# calculate the coordinates of intersection b using the coordinates of the selected node and of the left node
-		intersection_b = NSPoint(node.position.x + (prev_node.position.x - node.position.x) * factor_b,
-		                         node.position.y + (prev_node.position.y - node.position.y) * factor_b)
-		# calculate the path time at which the intersection with line c is reached
-		factor_c = dist_node_to_intersections / dist_current_node_next_node
-		# calculate the coordinates of intersection c using the coordinates of the selected node and of the right node
-		intersection_c = NSPoint(node.position.x + (next_node.position.x - node.position.x) * factor_c,
-		                         node.position.y + (next_node.position.y - node.position.y) * factor_c)
-
-		# find center of line between intersections
-		center_between_intersections = NSPoint((intersection_b.x + intersection_c.x) / 2,
-		                                       (intersection_b.y + intersection_c.y) / 2)
-
-		# find area of circle with aperture as diameter
-		circle_area = (aperture / 2) ** 2 * pi
-
-		# find area of triangle of intersection points and selected node
-		semi_perimeter = (dist_between_intersections + dist_node_to_intersections * 2) / 2
-		triangle_area = abs(sqrt(semi_perimeter * (semi_perimeter - dist_between_intersections)
-								 * (semi_perimeter - dist_node_to_intersections) ** 2))
-
-		# check whether the circle area multiplied by the threshold is larger than the triangle area
-		threshold_area = abs(circle_area * threshold)
-		if threshold_area < triangle_area:
-			print("Threshold is too low. The circle will not fit in the triangle.")
-			print(threshold_area, triangle_area)
+		if not center_of_circle or not intersection_previous_node or not intersection_next_node:
 			return
 
-		intersection_b_node = GSNode(intersection_b)
-		intersection_c_node = GSNode(intersection_c)
-		path.insertNode_atIndex_(intersection_b_node, node.index)
-		path.insertNode_atIndex_(intersection_c_node, node.index + 1)
+		# insert nodes at the intersections
+		path.insertNode_atIndex_(GSNode(intersection_previous_node), node.index)
+		path.insertNode_atIndex_(GSNode(intersection_next_node), node.index + 1)
+
+		return
 
 		# calculate the position of a new node which is on an extension of the line from the center of the
 		# intersections to the selected node
@@ -314,6 +383,23 @@ class Inktrapeze(FilterWithDialog):
 				path.removeNode_(intersection_b_node)
 				path.removeNode_(intersection_c_node)
 
+	@objc.python_method
+	def draw_calculations(self, layer, info):
+		try:
+			return
+			NSColor.redColor().set()
+			layer.bezierPath.fill()
+		except:
+			import traceback
+			print(traceback.format_exc())
+
+	def confirmDialog_(self, sender):
+		objc.super(Inktrapeze, self).confirmDialog_(sender)
+		Glyphs.removeCallback(self.draw_calculations)
+
+	def cancelDialog_(self, sender):
+		objc.super(Inktrapeze, self).cancelDialog_(sender)
+		Glyphs.removeCallback(self.draw_calculations)
 
 	@objc.python_method
 	def __file__(self):
