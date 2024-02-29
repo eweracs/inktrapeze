@@ -193,14 +193,17 @@ class Inktrapeze(FilterWithDialog):
 		# triangle.
 
 		# Calculate the angle of the line between the selected node and the previous node
-		angle_prev_node = self.calculate_angle(prev_node, node)
+		angle_prev_node = self.calculate_angle(node, prev_node)
+
+		# Calculate the angle of the line between the selected node and the next node
+		angle_next_node = self.calculate_angle(node, next_node)
 
 		# First, calculate the node positions of the intersections with the circle
 		intersection_previous_node = self.position_for_angle_distance(
 			node, angle_prev_node, distance_from_node_to_intersection
 		)
 		intersection_next_node = self.position_for_angle_distance(
-			node, angle_prev_node + angle_at_current_node, distance_from_node_to_intersection
+			node, angle_next_node, distance_from_node_to_intersection
 		)
 
 		# calculate the distance between the intersections
@@ -214,12 +217,18 @@ class Inktrapeze(FilterWithDialog):
 		)
 
 		# calculate distance of the center of the circle to the selected node
-		distance_circle_center_to_node = self.hypotenuse_for_cathetus_cathetus(aperture / 2,
-		                                                                       distance_from_node_to_intersection)
+		distance_circle_center_to_node = self.hypotenuse_for_cathetus_cathetus(
+			aperture / 2,
+			distance_from_node_to_intersection
+		)
+
+		print(angle_prev_node, angle_at_current_node)
 
 		# calculate the position of the center of the circle
 		center_of_circle = self.position_for_angle_distance(
-			node, 90 - angle_at_current_node / 2, distance_circle_center_to_node
+			node,
+			angle_prev_node + angle_at_current_node / 2,
+			distance_circle_center_to_node
 		)
 
 		# check whether the distance from the circle center to the selected node divided by the aperture is smaller than
@@ -305,6 +314,7 @@ class Inktrapeze(FilterWithDialog):
 			return
 
 		# insert nodes at the intersections
+		# path.insertNode_atIndex_(GSNode(center_of_circle), node.index)
 		path.insertNode_atIndex_(GSNode(intersection_previous_node), node.index)
 		path.insertNode_atIndex_(GSNode(intersection_next_node), node.index + 1)
 
