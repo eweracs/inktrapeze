@@ -27,24 +27,22 @@
 
 from __future__ import division, print_function, unicode_literals
 import objc
-from GlyphsApp import *
-from GlyphsApp.plugins import *
+from GlyphsApp import Glyphs, GSNode, OFFCURVE, distance, DRAWFOREGROUND
+from GlyphsApp.plugins import FilterWithDialog
 from math import sqrt, dist, sin, acos, atan2, degrees, radians, cos, pi
 from Foundation import NSPoint, NSColor
 
 
 class Inktrapeze(FilterWithDialog):
+
 	# The NSView object from the User Interface. Keep this here!
 	dialog = objc.IBOutlet()
 
 	# Text field in dialog
 	apertureTextField = objc.IBOutlet()
-	thresholdSlider = objc.IBOutlet()
-	depthSlider = objc.IBOutlet()
 	straightRadio = objc.IBOutlet()
 	curvedRadio = objc.IBOutlet()
 	flatTopRadio = objc.IBOutlet()
-	flatTopSizeTextField = objc.IBOutlet()
 
 	@objc.python_method
 	def settings(self):
@@ -70,24 +68,19 @@ class Inktrapeze(FilterWithDialog):
 	# On dialog show
 	@objc.python_method
 	def start(self):
-		self.set_fields()
+		Glyphs.registerDefaults({
+			"com.eweracs.inktrapeze.aperture": 20,
+			"com.eweracs.inktrapeze.flatTopSize": 10,
+			"com.eweracs.inktrapeze.threshold": 1,
+			"com.eweracs.inktrapeze.depth": 1,
+			"com.eweracs.inktrapeze.straight": True,
+		})
 		# Set focus to text field
 		self.apertureTextField.becomeFirstResponder()
 		Glyphs.addCallback(self.draw_calculations, DRAWFOREGROUND)
 
 	@objc.IBAction
-	def setAperture_(self, sender):
-		Glyphs.defaults["com.eweracs.inktrapeze.aperture"] = float(sender.floatValue())
-		self.update()
-
-	@objc.IBAction
-	def setThreshold_(self, sender):
-		Glyphs.defaults["com.eweracs.inktrapeze.threshold"] = float(sender.floatValue())
-		self.update()
-
-	@objc.IBAction
-	def setDepth_(self, sender):
-		Glyphs.defaults["com.eweracs.inktrapeze.depth"] = float(sender.floatValue())
+	def update_(self, sender):
 		self.update()
 
 	@objc.IBAction
@@ -97,7 +90,6 @@ class Inktrapeze(FilterWithDialog):
 		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = False
 		self.flatTopRadio.setState_(False)
 		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = False
-		self.flatTopSizeTextField.setEnabled_(False)
 		self.update()
 
 	@objc.IBAction
@@ -107,7 +99,6 @@ class Inktrapeze(FilterWithDialog):
 		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = False
 		self.flatTopRadio.setState_(False)
 		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = False
-		self.flatTopSizeTextField.setEnabled_(False)
 		self.update()
 
 	@objc.IBAction
@@ -117,41 +108,31 @@ class Inktrapeze(FilterWithDialog):
 		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = False
 		self.curvedRadio.setState_(False)
 		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = False
-		self.flatTopSizeTextField.setEnabled_(True)
 		self.update()
-
-	@objc.IBAction
-	def setFlatTopSize_(self, sender):
-		Glyphs.defaults["com.eweracs.inktrapeze.flatTopSize"] = float(sender.floatValue())
-		self.update()
-
-	@objc.python_method
-	def set_fields(self):
-		self.apertureTextField.setStringValue_(Glyphs.defaults["com.eweracs.inktrapeze.aperture"] or "20")
-		self.thresholdSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.threshold"] or 0)
-		self.depthSlider.setFloatValue_(Glyphs.defaults["com.eweracs.inktrapeze.depth"] or 0)
-		self.straightRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.straight"] or False)
-		self.curvedRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.curved"] or False)
-		self.flatTopRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] or False)
-		self.flatTopSizeTextField.setStringValue_(Glyphs.defaults["com.eweracs.inktrapeze.flatTopSize"] or "10")
 
 	# Actual filter
 	@objc.python_method
 	def filter(self, layer, inEditView, customParameters):
-		aperture = float(self.apertureTextField.floatValue())
-		threshold = 3 - float(self.thresholdSlider.floatValue())
-		depth = float(self.depthSlider.floatValue())
-		straight = bool(self.straightRadio.state())
-		curved = bool(self.curvedRadio.state())
-		flat_top = bool(self.flatTopRadio.state())
-		flat_top_size = int(self.flatTopSizeTextField.floatValue())
+		aperture = float(Glyphs.defaults["com.eweracs.inktrapeze.aperture"])
+		threshold = 3 - float(Glyphs.defaults["com.eweracs.inktrapeze.threshold"])
+		depth = float(Glyphs.defaults["com.eweracs.inktrapeze.depth"])
+		straight = Glyphs.boolDefaults["com.eweracs.inktrapeze.straight"]
+		curved = Glyphs.boolDefaults["com.eweracs.inktrapeze.curved"]
+		flat_top = Glyphs.boolDefaults["com.eweracs.inktrapeze.flatTop"]
+		flat_top_size = Glyphs.intDefaults["com.eweracs.inktrapeze.flatTopSize"]
 
-		if not inEditView:
-			return False
-		for path in layer.paths:
-			for node in path.nodes:
-				if node.selected:
-					self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
+		if inEditView:
+			for node in list(layer.selection):
+				if not isinstance(node, GSNode):
+					continue
+				print("__ process node:", node)
+				self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
+		else:
+			pass # process all nodes with a sharp angle
+		# for path in layer.paths:
+		# 	for node in list(path.nodes):
+		# 		if node.selected:
+		# 			self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
 
 	@objc.python_method
 	def calculate_inktrap_position(self, node, prev_node, next_node, aperture, threshold, depth):
@@ -163,11 +144,11 @@ class Inktrapeze(FilterWithDialog):
 		dist_current_node_next_node = distance(node.position, next_node.position)
 
 		if prev_node is None or next_node is None:
-			print("Node is not connected to other nodes.")
-			return
-		if prev_node.type == "offcurve" or next_node.type == "offcurve":
-			print("Node is an offcurve node.")
-			return
+			print("!! a Node is not connected to other nodes.")
+			return None, None, None
+		if prev_node.type == OFFCURVE or next_node.type == OFFCURVE:
+			print("!! b Node is an offcurve node.")
+			return None, None, None
 
 		# calculate the angle at the selected node
 		angle_at_current_node = self.calculate_angle_at_node(node, prev_node, next_node)
@@ -210,11 +191,11 @@ class Inktrapeze(FilterWithDialog):
 		dist_between_intersections = distance(intersection_previous_node, intersection_next_node)
 
 		# find area of triangle of intersection points and selected node
-		triangle_area = self.triangle_area(
-			dist_between_intersections,
-			dist_current_node_to_prev_node,
-			dist_current_node_next_node
-		)
+		# = self.triangle_area(
+		#	dist_between_intersections,
+		#	dist_current_node_to_prev_node,
+		#	dist_current_node_next_node
+		#)
 
 		# calculate distance of the center of the circle to the selected node
 		distance_circle_center_to_node = self.hypotenuse_for_cathetus_cathetus(
@@ -238,9 +219,9 @@ class Inktrapeze(FilterWithDialog):
 		# before an inktrap is created.
 
 		if distance_circle_center_to_node / aperture < threshold:
-			print(distance_circle_center_to_node, aperture, threshold)
-			return
-
+			print("!! c", distance_circle_center_to_node, aperture, threshold)
+			return None, None, None
+		print("__center_of_circle, intersection_previous_node, intersection_next_node", center_of_circle, intersection_previous_node, intersection_next_node)
 		return center_of_circle, intersection_previous_node, intersection_next_node
 
 	@objc.python_method
@@ -284,6 +265,7 @@ class Inktrapeze(FilterWithDialog):
 	@objc.python_method
 	def triangle_area(self, a, b, c):
 		s = (a + b + c) / 2
+		print("__triangle_area", s, a, b, c)
 		return sqrt(s * (s - a) * (s - b) * (s - c))
 
 	@objc.python_method
@@ -314,9 +296,8 @@ class Inktrapeze(FilterWithDialog):
 			return
 
 		# insert nodes at the intersections
-		# path.insertNode_atIndex_(GSNode(center_of_circle), node.index)
-		path.insertNode_atIndex_(GSNode(intersection_previous_node), node.index)
-		path.insertNode_atIndex_(GSNode(intersection_next_node), node.index + 1)
+		path.nodes.insert(node.index, GSNode(intersection_previous_node))
+		path.nodes.insert(node.index + 1, GSNode(intersection_next_node))
 
 		return
 
