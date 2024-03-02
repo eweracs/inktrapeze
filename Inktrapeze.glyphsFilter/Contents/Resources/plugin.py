@@ -30,7 +30,7 @@ import objc
 from GlyphsApp import Glyphs, GSNode, OFFCURVE, distance, DRAWFOREGROUND
 from GlyphsApp.plugins import FilterWithDialog
 from math import sqrt, dist, sin, acos, atan2, degrees, radians, cos, pi
-from Foundation import NSPoint, NSColor
+from Foundation import NSPoint, NSColor, NSColor, NSBezierPath, NSRect
 
 
 class Inktrapeze(FilterWithDialog):
@@ -43,6 +43,10 @@ class Inktrapeze(FilterWithDialog):
 	straightRadio = objc.IBOutlet()
 	curvedRadio = objc.IBOutlet()
 	flatTopRadio = objc.IBOutlet()
+
+	circle_centres = None
+	intersections = None
+
 
 	@objc.python_method
 	def settings(self):
@@ -114,7 +118,7 @@ class Inktrapeze(FilterWithDialog):
 	@objc.python_method
 	def filter(self, layer, inEditView, customParameters):
 		aperture = float(Glyphs.defaults["com.eweracs.inktrapeze.aperture"])
-		threshold = 3 - float(Glyphs.defaults["com.eweracs.inktrapeze.threshold"])
+		threshold = float(Glyphs.defaults["com.eweracs.inktrapeze.threshold"])
 		depth = float(Glyphs.defaults["com.eweracs.inktrapeze.depth"])
 		straight = Glyphs.boolDefaults["com.eweracs.inktrapeze.straight"]
 		curved = Glyphs.boolDefaults["com.eweracs.inktrapeze.curved"]
@@ -122,10 +126,25 @@ class Inktrapeze(FilterWithDialog):
 		flat_top_size = Glyphs.intDefaults["com.eweracs.inktrapeze.flatTopSize"]
 
 		if inEditView:
+			self.circle_centres = []
+			self.intersections = []
 			for node in list(layer.selection):
 				if not isinstance(node, GSNode):
 					continue
-				self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
+				center_of_circle, inersection1, intersection2 = self.create_inktrap_for_node(
+					node,
+					aperture,
+					threshold,
+					depth,
+					straight,
+					curved,
+					flat_top,
+					flat_top_size
+				)
+				if center_of_circle:
+					self.circle_centres.append(center_of_circle)
+					self.intersections.append(inersection1)
+					self.intersections.append(intersection2)
 		else:
 			pass # process all nodes with a sharp angle
 		# for path in layer.paths:
@@ -157,16 +176,25 @@ class Inktrapeze(FilterWithDialog):
 		# Then calculate the distance from the intersection of the circle with the right line to the intersection with
 		# the left line.
 
-		# To achieve this, construct a right triangle with these points: center of circle, intersection with right line,
+		# To achieve this, construct a right triangle with these points: centre of circle, intersection with right line,
 		# the selected node. The angle at the intersection with both lines is 90 degrees. The angle at the selected
-		# node is half the original angle at the selected node and the angle at the circle center is 90 minus the angle
-		# at the selected node. The distance from the center of the circle to the intersection with any of the two lines
+		# node is half the original angle at the selected node and the angle at the circle centre is 90 minus the angle
+		# at the selected node. The distance from the centre of the circle to the intersection with any of the two lines
 		# is the radius of the circle.
 
 		# The distance from the selected node to either intersection point can be calculated using a triangle with the
 		# given parameters: the selected node, half the angle at the selected node, the radius of the circle.
 
-		distance_from_node_to_intersection = self.cathetus_for_cathetus_angle(aperture / 2, angle_at_current_node / 2)
+		# calculate distance of the centre of the circle to the selected node
+		distance_circle_centre_to_node = self.hypotenuse_for_cathetus_angle(
+			aperture / 2,
+			angle_at_current_node / 2
+		)
+
+		distance_from_node_to_intersection = self.cathetus_for_cathetus_hypotenuse(
+			aperture / 2,
+			distance_circle_centre_to_node
+		)
 
 		# Then construct a triangle with the given parameters: the selected node, the angle at the selected node, the
 		# distance from the selected node to both intersection points with the circle. Calculate the area of this
@@ -186,41 +214,34 @@ class Inktrapeze(FilterWithDialog):
 			node, angle_next_node, distance_from_node_to_intersection
 		)
 
-		# calculate the distance between the intersections
-		dist_between_intersections = distance(intersection_previous_node, intersection_next_node)
-
-		# find area of triangle of intersection points and selected node
-		# = self.triangle_area(
-		#	dist_between_intersections,
-		#	dist_current_node_to_prev_node,
-		#	dist_current_node_next_node
-		#)
-
-		# calculate distance of the center of the circle to the selected node
-		distance_circle_center_to_node = self.hypotenuse_for_cathetus_cathetus(
-			aperture / 2,
-			distance_from_node_to_intersection
-		)
-
-		# calculate the position of the center of the circle. Depending on the path direction, the order of the angles
+		# calculate the position of the centre of the circle. Depending on the path direction, the order of the angles
 		# used to calculate the position needs to be adjusted.
 		angle = angle_prev_node if angle_prev_node < angle_next_node else angle_next_node
-		center_of_circle = self.position_for_angle_distance(
+		centre_of_circle = self.position_for_angle_distance(
 			node,
 			angle + angle_at_current_node / 2,
-			distance_circle_center_to_node
+			distance_circle_centre_to_node
 		)
 
-		# check whether the distance from the circle center to the selected node divided by the aperture is smaller than
+		# check whether the distance from the circle centre to the selected node divided by the aperture is smaller than
 		# the threshold, if so, skip.
-		# For example, if the threshold is 1, the selected node must be at least one aperture away from the center of
-		# the circle. The higher the threshold, the further away the selected node must be from the center of the circle
+		# For example, if the threshold is 1, the selected node must be at least one aperture away from the centre of
+		# the circle. The higher the threshold, the further away the selected node must be from the centre of the circle
 		# before an inktrap is created.
 
-		if distance_circle_center_to_node / aperture < threshold:
-			print("!! c", distance_circle_center_to_node, aperture, threshold)
-			return None, None, None
-		return center_of_circle, intersection_previous_node, intersection_next_node
+		make_inktrap = True
+
+		if distance_circle_centre_to_node > aperture / 2 * threshold:
+			print("!! distance_circle_center_to_node, aperture, threshold",
+			      distance_circle_centre_to_node,
+			      aperture,
+			      threshold)
+			make_inktrap = False
+		return (centre_of_circle,
+		        intersection_previous_node,
+		        intersection_next_node,
+		        distance_circle_centre_to_node,
+		        make_inktrap)
 
 	@objc.python_method
 	def calculate_angle(self, node1, node2):
@@ -253,67 +274,69 @@ class Inktrapeze(FilterWithDialog):
 		return NSPoint(node.position.x + distance * cos(radians(angle)), node.position.y + distance * sin(radians(angle)))
 
 	@objc.python_method
-	def cathetus_for_cathetus_angle(self, cathetus, angle):
+	def cathetus_for_cathetus_hypotenuse(self, cathetus, hypotenuse):
+		return sqrt(hypotenuse ** 2 - cathetus ** 2)
+
+	@objc.python_method
+	def hypotenuse_for_cathetus_angle(self, cathetus, angle):
 		return cathetus / sin(radians(angle))
 
 	@objc.python_method
-	def hypotenuse_for_cathetus_cathetus(self, cathetus1, cathetus2):
-		return sqrt(cathetus1 ** 2 + cathetus2 ** 2)
-
-	@objc.python_method
-	def triangle_area(self, a, b, c):
-		s = (a + b + c) / 2
-		return sqrt(s * (s - a) * (s - b) * (s - c))
-
-	@objc.python_method
-	def circle_area(self, radius):
-		return pi * radius ** 2
-
-	@objc.python_method
-	def calculate_intersection_path_time(self, node, other_node, intersection):
-		intersection_path_time = (distance(node.position, intersection) / distance(node.position, other_node.position))
-		return intersection_path_time
-
-	@objc.python_method
-	def center_between_points(self, point1, point2):
+	def centre_between_points(self, point1, point2):
 		return NSPoint((point1.x + point2.x) / 2, (point1.y + point2.y) / 2)
+
+	@objc.python_method
+	def calculate_new_main_node_position(self, node, centre_of_circle, distance_circle_centre_to_node, aperture,
+	                                     threshold, depth):
+		dx = node.position.x - centre_of_circle[0]
+		dy = node.position.y - centre_of_circle[1]
+
+		radius = aperture / 2
+		distance_factor = (radius * threshold + radius * depth) / distance_circle_centre_to_node
+
+		new_node_position = NSPoint(
+			node.position.x + dx * distance_factor - dx,
+			node.position.y + dy * distance_factor - dy
+		)
+
+		return new_node_position
 
 	@objc.python_method
 	def create_inktrap_for_node(self, node, aperture, threshold, depth, straight=True, curved=False, flat_top=False,
 								flat_top_size=5):
-		# there are three nodes that form a triangle. A center node ("node") and one left and one right node ("left_node" and
-		# "right_node")
-
 		path = node.parent
 
 		prev_node = node.prevNode
 		next_node = node.nextNode
 
-		center_of_circle, intersection_previous_node, intersection_next_node = self.calculate_inktrap_position(
+		(centre_of_circle,
+		 intersection_previous_node,
+		 intersection_next_node,
+		 distance_circle_centre_to_node,
+		 make_inktrap) = self.calculate_inktrap_position(
 			node, prev_node, next_node, aperture, threshold, depth
 		)
 
-		if not center_of_circle or not intersection_previous_node or not intersection_next_node:
+		if not centre_of_circle or not intersection_previous_node or not intersection_next_node or not make_inktrap:
 			return
 
-		center_between_intersections = self.center_between_points(intersection_previous_node, intersection_next_node)
+		# calculate the new position of the node by using the circle's radius multiplied by the threshold, plus the
+		# radius multiplied by the depth
 
-		# calculate the position of a new node which is on an extension of the line from the center of the
-		# intersections to the selected node. Use the depth as a factor by which to extend the line negatively.
-		new_node_position = NSPoint(
-			node.position.x + (node.position.x - center_between_intersections.x) * depth,
-			node.position.y + (node.position.y - center_between_intersections.y) * depth
+		node.position = self.calculate_new_main_node_position(
+			node,
+			centre_of_circle,
+			distance_circle_centre_to_node,
+			aperture,
+			threshold,
+			depth
 		)
-
-		node.position = new_node_position
 
 		# insert nodes at the intersections (the beginning of the inktrap)
 		path.nodes.insert(node.index, GSNode(intersection_previous_node))
 		path.nodes.insert(node.index + 1, GSNode(intersection_next_node))
 
-		path.nodes.insert(node.index, GSNode(center_of_circle))
-
-		return
+		return centre_of_circle, intersection_previous_node, intersection_next_node
 
 		if curved:
 			# find the point which is on the extension of the line from prev_node to intersection_b. The extra
@@ -382,11 +405,54 @@ class Inktrapeze(FilterWithDialog):
 				path.removeNode_(intersection_c_node)
 
 	@objc.python_method
+	def bezier_path_for_circle(self, x, y, radius):
+		path = NSBezierPath.alloc().init()
+		rect = NSRect((x - radius, y - radius), (radius * 2, radius * 2))
+		oval_in_rect = NSBezierPath.bezierPathWithOvalInRect_(rect)
+		path.appendBezierPath_(oval_in_rect)
+
+		return path
+
+	@objc.python_method
 	def draw_calculations(self, layer, info):
+		scale = Glyphs.font.currentTab.scale
 		try:
-			return
-			NSColor.redColor().set()
-			layer.bezierPath.fill()
+			if self.circle_centres is None or self.intersections is None:
+				return
+			aperture = float(Glyphs.defaults["com.eweracs.inktrapeze.aperture"])
+			threshold = float(Glyphs.defaults["com.eweracs.inktrapeze.threshold"])
+			depth = float(Glyphs.defaults["com.eweracs.inktrapeze.depth"])
+
+			radius = aperture / 2
+
+			for centre in self.circle_centres:
+				NSColor.colorWithCalibratedRed_green_blue_alpha_( 1, .2, 0, .5 ).set()
+				circle_path = self.bezier_path_for_circle(
+					centre.x,
+				    centre.y,
+					radius
+				)
+				circle_path.fill()
+
+				# also draw a circle with just a stroke outline with the aperture multiplied by the threshold
+				circle_path = self.bezier_path_for_circle(
+					centre.x,
+					centre.y,
+					radius * threshold
+				)
+				circle_path.setLineWidth_(1 / scale)
+				circle_path.stroke()
+
+				# also draw a green circle with just a stroke outline with the radius multiplied by the threshold,
+				# plus the radius multiplied by the depth
+				NSColor.colorWithCalibratedRed_green_blue_alpha_( 0, 1, 0, .5 ).set()
+				circle_path = self.bezier_path_for_circle(
+					centre.x,
+					centre.y,
+					radius * threshold + radius * depth
+				)
+				circle_path.setLineWidth_(1 / scale)
+				circle_path.stroke()
 		except:
 			import traceback
 			print(traceback.format_exc())
