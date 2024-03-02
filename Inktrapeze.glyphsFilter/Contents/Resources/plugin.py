@@ -318,7 +318,7 @@ class Inktrapeze(FilterWithDialog):
 		)
 
 		if not centre_of_circle or not intersection_previous_node or not intersection_next_node or not make_inktrap:
-			return
+			return centre_of_circle, intersection_previous_node, intersection_next_node
 
 		# calculate the new position of the node by using the circle's radius multiplied by the threshold, plus the
 		# radius multiplied by the depth
@@ -336,73 +336,88 @@ class Inktrapeze(FilterWithDialog):
 		path.nodes.insert(node.index, GSNode(intersection_previous_node))
 		path.nodes.insert(node.index + 1, GSNode(intersection_next_node))
 
-		return centre_of_circle, intersection_previous_node, intersection_next_node
-
 		if curved:
-			# find the point which is on the extension of the line from prev_node to intersection_b. The extra
-			# distance from the intersection to the new point is relative to depth and the distance of the selected
-			# node to the intersection
-			distance_factor = dist([node.position.x, node.position.y], [intersection_b.x, intersection_b.y]) \
-			                  / dist([intersection_b.x, intersection_b.y], [prev_node.position.x, prev_node.position.y])
-
-			offcurve_1 = NSPoint(intersection_b.x + (intersection_b.x - prev_node.position.x) * distance_factor / 3,
-			                     intersection_b.y + (intersection_b.y - prev_node.position.y) * distance_factor / 3)
-
-			# find the point which is on the extension of the line from intersection_b to offcurve_1
-			reference_1 = NSPoint(offcurve_1.x + (offcurve_1.x - intersection_b.x),
-			                      offcurve_1.y + (offcurve_1.y - intersection_b.y))
-
-			# find the point which is one third of the way from the selected node to intersection_b
-			reference_2 = NSPoint(node.position.x - (node.position.x - intersection_b.x) / 3,
-			                      node.position.y - (node.position.y - intersection_b.y) / 3)
-
-			offcurve_2 = NSPoint((reference_1.x + reference_2.x) / 2, (reference_1.y + reference_2.y) / 2)
-
-			path.nodes.insert(node.index, GSNode(offcurve_1, OFFCURVE))
-			path.nodes[node.index - 2].smooth = True
-			path.nodes.insert(node.index, GSNode(offcurve_2, OFFCURVE))
-			node.type = CURVE
-
-			# find the point which is on the extension of the line from next_node to intersection_c. The extra
-			# distance from the intersection to the new point is relative to depth and the distance of the selected
-			# node to the intersection
-			distance_factor = dist([node.position.x, node.position.y], [intersection_c.x, intersection_c.y]) / dist([
-				intersection_c.x, intersection_c.y], [next_node.position.x, next_node.position.y])
-
-			offcurve_3 = NSPoint(intersection_c.x + (intersection_c.x - next_node.position.x) * distance_factor / 3,
-			                     intersection_c.y + (intersection_c.y - next_node.position.y) * distance_factor / 3)
-			reference_3 = NSPoint(offcurve_3.x + (offcurve_3.x - intersection_c.x),
-			                     offcurve_3.y + (offcurve_3.y - intersection_c.y))
-			reference_4 = NSPoint(node.position.x - (node.position.x - intersection_c.x) / 3,
-			                      node.position.y - (node.position.y - intersection_c.y) / 3)
-			offcurve_4 = NSPoint((reference_3.x + reference_4.x) / 2, (reference_3.y + reference_4.y) / 2)
-
-			path.nodes.insert(node.index + 1, GSNode(offcurve_3, OFFCURVE))
-			path.nodes[node.index + 2].smooth = True
-			path.nodes.insert(node.index + 1, GSNode(offcurve_4, OFFCURVE))
-			intersection_c_node.type = CURVE
+			self.make_curved_inktrap(node, intersection_previous_node, intersection_next_node)
 
 		if flat_top:
-			# divide flat_top_size by the aperture
-			move_factor = flat_top_size / aperture
-			# if the move factor is larger than 1, skip
-			if 1 > move_factor and flat_top_size > 0:
-				# calculate the coordinate of the point which is on the line intersection_b to new_node_position, at a
-				# percentage of move_factor away from new_node_position
-				reference_1 = NSPoint(new_node_position.x - (new_node_position.x - intersection_b.x) * move_factor,
-									  new_node_position.y - (new_node_position.y - intersection_b.y) * move_factor)
-				# calculate the coordinate of the point which is on the line intersection_c to new_node_position, at a
-				# percentage of move_factor away from new_node_position
-				reference_2 = NSPoint(new_node_position.x - (new_node_position.x - intersection_c.x) * move_factor,
-									  new_node_position.y - (new_node_position.y - intersection_c.y) * move_factor)
-				# insert these nodes on the paths, one after the current node and one before
-				path.insertNode_atIndex_(GSNode(reference_1), node.index)
-				path.insertNode_atIndex_(GSNode(reference_2), node.index + 1)
-			if flat_top_size > 0:
-				path.removeNode_(node)
-			if depth == 0:
-				path.removeNode_(intersection_b_node)
-				path.removeNode_(intersection_c_node)
+			self.add_flat_top(node)
+
+		return centre_of_circle, intersection_previous_node, intersection_next_node
+
+	@objc.python_method
+	def make_curved_inktrap(self, node, intersection1, intersection2):
+		return
+		# find the point which is on the extension of the line from prev_node to intersection_b. The extra
+		# distance from the intersection to the new point is relative to depth and the distance of the selected
+		# node to the intersection
+		distance_factor = dist([node.position.x, node.position.y], [intersection_b.x, intersection_b.y]) \
+		                  / dist([intersection_b.x, intersection_b.y], [prev_node.position.x, prev_node.position.y])
+
+		offcurve_1 = NSPoint(intersection_b.x + (intersection_b.x - prev_node.position.x) * distance_factor / 3,
+		                     intersection_b.y + (intersection_b.y - prev_node.position.y) * distance_factor / 3)
+
+		# find the point which is on the extension of the line from intersection_b to offcurve_1
+		reference_1 = NSPoint(offcurve_1.x + (offcurve_1.x - intersection_b.x),
+		                      offcurve_1.y + (offcurve_1.y - intersection_b.y))
+
+		# find the point which is one third of the way from the selected node to intersection_b
+		reference_2 = NSPoint(node.position.x - (node.position.x - intersection_b.x) / 3,
+		                      node.position.y - (node.position.y - intersection_b.y) / 3)
+
+		offcurve_2 = NSPoint((reference_1.x + reference_2.x) / 2, (reference_1.y + reference_2.y) / 2)
+
+		path.nodes.insert(node.index, GSNode(offcurve_1, OFFCURVE))
+		path.nodes[node.index - 2].smooth = True
+		path.nodes.insert(node.index, GSNode(offcurve_2, OFFCURVE))
+		node.type = CURVE
+
+		# find the point which is on the extension of the line from next_node to intersection_c. The extra
+		# distance from the intersection to the new point is relative to depth and the distance of the selected
+		# node to the intersection
+		distance_factor = dist([node.position.x, node.position.y], [intersection_c.x, intersection_c.y]) / dist([
+			intersection_c.x, intersection_c.y], [next_node.position.x, next_node.position.y])
+
+		offcurve_3 = NSPoint(intersection_c.x + (intersection_c.x - next_node.position.x) * distance_factor / 3,
+		                     intersection_c.y + (intersection_c.y - next_node.position.y) * distance_factor / 3)
+		reference_3 = NSPoint(offcurve_3.x + (offcurve_3.x - intersection_c.x),
+		                      offcurve_3.y + (offcurve_3.y - intersection_c.y))
+		reference_4 = NSPoint(node.position.x - (node.position.x - intersection_c.x) / 3,
+		                      node.position.y - (node.position.y - intersection_c.y) / 3)
+		offcurve_4 = NSPoint((reference_3.x + reference_4.x) / 2, (reference_3.y + reference_4.y) / 2)
+
+		path.nodes.insert(node.index + 1, GSNode(offcurve_3, OFFCURVE))
+		path.nodes[node.index + 2].smooth = True
+		path.nodes.insert(node.index + 1, GSNode(offcurve_4, OFFCURVE))
+		intersection_c_node.type = CURVE
+
+	@objc.python_method
+	def make_straight_inktrap(self, node, intersection1, intersection2):
+		pass
+
+	@objc.python_method
+	def add_flat_top(self, node):
+		return
+		flat_top_size = float(Glyphs.defaults["com.eweracs.inktrapeze.flatTopSize"])
+		# divide flat_top_size by the aperture
+		move_factor = flat_top_size / aperture
+		# if the move factor is larger than 1, skip
+		if 1 > move_factor and flat_top_size > 0:
+			# calculate the coordinate of the point which is on the line intersection_b to new_node_position, at a
+			# percentage of move_factor away from new_node_position
+			reference_1 = NSPoint(new_node_position.x - (new_node_position.x - intersection_b.x) * move_factor,
+			                      new_node_position.y - (new_node_position.y - intersection_b.y) * move_factor)
+			# calculate the coordinate of the point which is on the line intersection_c to new_node_position, at a
+			# percentage of move_factor away from new_node_position
+			reference_2 = NSPoint(new_node_position.x - (new_node_position.x - intersection_c.x) * move_factor,
+			                      new_node_position.y - (new_node_position.y - intersection_c.y) * move_factor)
+			# insert these nodes on the paths, one after the current node and one before
+			path.insertNode_atIndex_(GSNode(reference_1), node.index)
+			path.insertNode_atIndex_(GSNode(reference_2), node.index + 1)
+		if flat_top_size > 0:
+			path.removeNode_(node)
+		if depth == 0:
+			path.removeNode_(intersection_b_node)
+			path.removeNode_(intersection_c_node)
 
 	@objc.python_method
 	def bezier_path_for_circle(self, x, y, radius):
