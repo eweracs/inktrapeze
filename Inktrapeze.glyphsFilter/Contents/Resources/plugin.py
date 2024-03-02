@@ -125,7 +125,6 @@ class Inktrapeze(FilterWithDialog):
 			for node in list(layer.selection):
 				if not isinstance(node, GSNode):
 					continue
-				print("__ process node:", node)
 				self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
 		else:
 			pass # process all nodes with a sharp angle
@@ -203,12 +202,12 @@ class Inktrapeze(FilterWithDialog):
 			distance_from_node_to_intersection
 		)
 
-		print(angle_prev_node, angle_at_current_node)
-
-		# calculate the position of the center of the circle
+		# calculate the position of the center of the circle. Depending on the path direction, the order of the angles
+		# used to calculate the position needs to be adjusted.
+		angle = angle_prev_node if angle_prev_node < angle_next_node else angle_next_node
 		center_of_circle = self.position_for_angle_distance(
 			node,
-			angle_prev_node + angle_at_current_node / 2,
+			angle + angle_at_current_node / 2,
 			distance_circle_center_to_node
 		)
 
@@ -221,7 +220,6 @@ class Inktrapeze(FilterWithDialog):
 		if distance_circle_center_to_node / aperture < threshold:
 			print("!! c", distance_circle_center_to_node, aperture, threshold)
 			return None, None, None
-		print("__center_of_circle, intersection_previous_node, intersection_next_node", center_of_circle, intersection_previous_node, intersection_next_node)
 		return center_of_circle, intersection_previous_node, intersection_next_node
 
 	@objc.python_method
@@ -265,7 +263,6 @@ class Inktrapeze(FilterWithDialog):
 	@objc.python_method
 	def triangle_area(self, a, b, c):
 		s = (a + b + c) / 2
-		print("__triangle_area", s, a, b, c)
 		return sqrt(s * (s - a) * (s - b) * (s - c))
 
 	@objc.python_method
@@ -276,6 +273,10 @@ class Inktrapeze(FilterWithDialog):
 	def calculate_intersection_path_time(self, node, other_node, intersection):
 		intersection_path_time = (distance(node.position, intersection) / distance(node.position, other_node.position))
 		return intersection_path_time
+
+	@objc.python_method
+	def center_between_points(self, point1, point2):
+		return NSPoint((point1.x + point2.x) / 2, (point1.y + point2.y) / 2)
 
 	@objc.python_method
 	def create_inktrap_for_node(self, node, aperture, threshold, depth, straight=True, curved=False, flat_top=False,
@@ -295,18 +296,24 @@ class Inktrapeze(FilterWithDialog):
 		if not center_of_circle or not intersection_previous_node or not intersection_next_node:
 			return
 
-		# insert nodes at the intersections
+		center_between_intersections = self.center_between_points(intersection_previous_node, intersection_next_node)
+
+		# calculate the position of a new node which is on an extension of the line from the center of the
+		# intersections to the selected node. Use the depth as a factor by which to extend the line negatively.
+		new_node_position = NSPoint(
+			node.position.x + (node.position.x - center_between_intersections.x) * depth,
+			node.position.y + (node.position.y - center_between_intersections.y) * depth
+		)
+
+		node.position = new_node_position
+
+		# insert nodes at the intersections (the beginning of the inktrap)
 		path.nodes.insert(node.index, GSNode(intersection_previous_node))
 		path.nodes.insert(node.index + 1, GSNode(intersection_next_node))
 
+		path.nodes.insert(node.index, GSNode(center_of_circle))
+
 		return
-
-		# calculate the position of a new node which is on an extension of the line from the center of the
-		# intersections to the selected node
-		new_node_position = NSPoint(node.position.x - (center_between_intersections.x - node.position.x) * depth,
-									node.position.y - (center_between_intersections.y - node.position.y) * depth)
-
-		node.position = new_node_position
 
 		if curved:
 			# find the point which is on the extension of the line from prev_node to intersection_b. The extra
