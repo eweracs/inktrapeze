@@ -34,7 +34,6 @@ from Foundation import NSPoint, NSColor, NSColor, NSBezierPath, NSRect
 
 
 class Inktrapeze(FilterWithDialog):
-
 	# The NSView object from the User Interface. Keep this here!
 	dialog = objc.IBOutlet()
 
@@ -46,7 +45,6 @@ class Inktrapeze(FilterWithDialog):
 
 	circle_centres = None
 	intersections = None
-
 
 	@objc.python_method
 	def settings(self):
@@ -146,11 +144,12 @@ class Inktrapeze(FilterWithDialog):
 					self.intersections.append(inersection1)
 					self.intersections.append(intersection2)
 		else:
-			pass # process all nodes with a sharp angle
-		# for path in layer.paths:
-		# 	for node in list(path.nodes):
-		# 		if node.selected:
-		# 			self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
+			pass  # process all nodes with a sharp angle
+
+	# for path in layer.paths:
+	# 	for node in list(path.nodes):
+	# 		if node.selected:
+	# 			self.create_inktrap_for_node(node, aperture, threshold, depth, straight, curved, flat_top, flat_top_size)
 
 	@objc.python_method
 	def calculate_inktrap_position(self, node, prev_node, next_node, aperture, threshold, depth):
@@ -170,6 +169,14 @@ class Inktrapeze(FilterWithDialog):
 
 		# calculate the angle at the selected node
 		angle_at_current_node = self.calculate_angle_at_node(node, prev_node, next_node)
+
+		# Calculate the angle of the line between the selected node and the previous node
+		angle_prev_node = self.calculate_angle(node, prev_node)
+
+		# Calculate the angle of the line between the selected node and the next node
+		angle_next_node = self.calculate_angle(node, next_node)
+
+		print(round(angle_at_current_node), round((angle_prev_node - angle_next_node) / 2))
 
 		# Construct a circle with the diameter of the aperture and see how far it can be pushed into the triangle at the
 		# selected node.
@@ -200,12 +207,6 @@ class Inktrapeze(FilterWithDialog):
 		# distance from the selected node to both intersection points with the circle. Calculate the area of this
 		# triangle.
 
-		# Calculate the angle of the line between the selected node and the previous node
-		angle_prev_node = self.calculate_angle(node, prev_node)
-
-		# Calculate the angle of the line between the selected node and the next node
-		angle_next_node = self.calculate_angle(node, next_node)
-
 		# First, calculate the node positions of the intersections with the circle
 		intersection_previous_node = self.position_for_angle_distance(
 			node, angle_prev_node, distance_from_node_to_intersection
@@ -216,6 +217,10 @@ class Inktrapeze(FilterWithDialog):
 
 		# calculate the position of the centre of the circle. Depending on the path direction, the order of the angles
 		# used to calculate the position needs to be adjusted.
+
+		print("__ angle_prev_node, angle_next_node, angle_at_current_node", angle_prev_node, angle_next_node,
+		      angle_at_current_node)
+
 		angle = angle_prev_node if angle_prev_node < angle_next_node else angle_next_node
 		centre_of_circle = self.position_for_angle_distance(
 			node,
@@ -231,12 +236,9 @@ class Inktrapeze(FilterWithDialog):
 
 		make_inktrap = True
 
-		if distance_circle_centre_to_node > aperture / 2 * threshold:
-			print("!! distance_circle_center_to_node, aperture, threshold",
-			      distance_circle_centre_to_node,
-			      aperture,
-			      threshold)
+		if distance_circle_centre_to_node < aperture / 2 * threshold:
 			make_inktrap = False
+
 		return (centre_of_circle,
 		        intersection_previous_node,
 		        intersection_next_node,
@@ -262,7 +264,9 @@ class Inktrapeze(FilterWithDialog):
 		# calculate the angle at the selected node
 		angle_at_current_node = degrees(
 			acos(
-				(dist_current_node_to_prev_node ** 2 + dist_current_node_next_node ** 2 - dist_prev_node_to_next_node ** 2)
+				(dist_current_node_to_prev_node ** 2
+				 + dist_current_node_next_node ** 2
+				 - dist_prev_node_to_next_node ** 2)
 				/ (2 * dist_current_node_to_prev_node * dist_current_node_next_node)
 			)
 		)
@@ -271,7 +275,8 @@ class Inktrapeze(FilterWithDialog):
 
 	@objc.python_method
 	def position_for_angle_distance(self, node, angle, distance):
-		return NSPoint(node.position.x + distance * cos(radians(angle)), node.position.y + distance * sin(radians(angle)))
+		return NSPoint(node.position.x + distance * cos(radians(angle)),
+		               node.position.y + distance * sin(radians(angle)))
 
 	@objc.python_method
 	def cathetus_for_cathetus_hypotenuse(self, cathetus, hypotenuse):
@@ -288,22 +293,27 @@ class Inktrapeze(FilterWithDialog):
 	@objc.python_method
 	def calculate_new_main_node_position(self, node, centre_of_circle, distance_circle_centre_to_node, aperture,
 	                                     threshold, depth):
+		# multiply the distance from the node's current position to the threshold ring by the depth factor, this will
+		# give the new position of the node
+
+		threshold_ring_radius = aperture / 2 * threshold
+		distance_from_node_to_threshold_ring = distance_circle_centre_to_node - threshold_ring_radius
+
 		dx = node.position.x - centre_of_circle[0]
 		dy = node.position.y - centre_of_circle[1]
 
-		radius = aperture / 2
-		distance_factor = (radius * threshold + radius * depth) / distance_circle_centre_to_node
+		distance_factor = distance_from_node_to_threshold_ring / distance_circle_centre_to_node * depth
 
 		new_node_position = NSPoint(
-			node.position.x + dx * distance_factor - dx,
-			node.position.y + dy * distance_factor - dy
+			node.position.x + dx * distance_factor,
+			node.position.y + dy * distance_factor
 		)
 
 		return new_node_position
 
 	@objc.python_method
 	def create_inktrap_for_node(self, node, aperture, threshold, depth, straight=True, curved=False, flat_top=False,
-								flat_top_size=5):
+	                            flat_top_size=5):
 		path = node.parent
 
 		prev_node = node.prevNode
@@ -337,7 +347,7 @@ class Inktrapeze(FilterWithDialog):
 		path.nodes.insert(node.index + 1, GSNode(intersection_next_node))
 
 		if curved:
-			self.make_curved_inktrap(node, intersection_previous_node, intersection_next_node)
+			self.make_curved_inktrap(node, prev_node, next_node, intersection_previous_node, intersection_next_node)
 
 		if flat_top:
 			self.add_flat_top(node)
@@ -345,7 +355,9 @@ class Inktrapeze(FilterWithDialog):
 		return centre_of_circle, intersection_previous_node, intersection_next_node
 
 	@objc.python_method
-	def make_curved_inktrap(self, node, intersection1, intersection2):
+	def make_curved_inktrap(self, node, prev_node, next_node, prev_intersection, next_intersection):
+		angle_at_intersection = self.calculate_angle_at_node(GSNode(prev_intersection), prev_node, node)
+		print("__ angle_at_intersection", angle_at_intersection)
 		return
 		# find the point which is on the extension of the line from prev_node to intersection_b. The extra
 		# distance from the intersection to the new point is relative to depth and the distance of the selected
@@ -436,15 +448,14 @@ class Inktrapeze(FilterWithDialog):
 				return
 			aperture = float(Glyphs.defaults["com.eweracs.inktrapeze.aperture"])
 			threshold = float(Glyphs.defaults["com.eweracs.inktrapeze.threshold"])
-			depth = float(Glyphs.defaults["com.eweracs.inktrapeze.depth"])
 
 			radius = aperture / 2
 
 			for centre in self.circle_centres:
-				NSColor.colorWithCalibratedRed_green_blue_alpha_( 1, .2, 0, .5 ).set()
+				NSColor.colorWithCalibratedRed_green_blue_alpha_(1, .2, 0, .5).set()
 				circle_path = self.bezier_path_for_circle(
 					centre.x,
-				    centre.y,
+					centre.y,
 					radius
 				)
 				circle_path.fill()
@@ -458,16 +469,6 @@ class Inktrapeze(FilterWithDialog):
 				circle_path.setLineWidth_(1 / scale)
 				circle_path.stroke()
 
-				# also draw a green circle with just a stroke outline with the radius multiplied by the threshold,
-				# plus the radius multiplied by the depth
-				NSColor.colorWithCalibratedRed_green_blue_alpha_( 0, 1, 0, .5 ).set()
-				circle_path = self.bezier_path_for_circle(
-					centre.x,
-					centre.y,
-					radius * threshold + radius * depth
-				)
-				circle_path.setLineWidth_(1 / scale)
-				circle_path.stroke()
 		except:
 			import traceback
 			print(traceback.format_exc())

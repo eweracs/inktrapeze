@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="21223" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="22505" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
     <dependencies>
-        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="21223"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="22505"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <objects>
@@ -38,10 +38,14 @@
                 </textField>
                 <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="xBg-B2-Onb">
                     <rect key="frame" x="87" y="112" width="110" height="28"/>
-                    <sliderCell key="cell" continuous="YES" state="on" alignment="left" minValue="1" maxValue="4" doubleValue="2" tickMarkPosition="above" numberOfTickMarks="16" allowsTickMarkValuesOnly="YES" sliderType="linear" id="Vrc-N9-aVc"/>
+                    <sliderCell key="cell" continuous="YES" state="on" alignment="left" minValue="1" maxValue="10" doubleValue="1" tickMarkPosition="above" sliderType="linear" id="Vrc-N9-aVc"/>
                     <connections>
                         <action selector="update:" target="-2" id="MQ0-Pm-Mu2"/>
-                        <binding destination="qOh-Gs-cUO" name="value" keyPath="values.com.eweracs.inktrapeze.threshold" id="KBi-P4-Ad4"/>
+                        <binding destination="qOh-Gs-cUO" name="value" keyPath="values.com.eweracs.inktrapeze.threshold" id="en6-Ws-FW4">
+                            <dictionary key="options">
+                                <bool key="NSAllowsEditingMultipleValuesSelection" value="NO"/>
+                            </dictionary>
+                        </binding>
                     </connections>
                 </slider>
                 <textField verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="vfg-c5-0Yw" customClass="GSSteppingTextField">
@@ -69,7 +73,7 @@
                 </textField>
                 <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="ZMl-jU-4Md">
                     <rect key="frame" x="87" y="88" width="110" height="28"/>
-                    <sliderCell key="cell" continuous="YES" state="on" alignment="left" maxValue="3" doubleValue="1" tickMarkPosition="above" numberOfTickMarks="16" allowsTickMarkValuesOnly="YES" sliderType="linear" id="Oc8-xT-iW5"/>
+                    <sliderCell key="cell" continuous="YES" state="on" alignment="left" maxValue="1" doubleValue="1" tickMarkPosition="above" sliderType="linear" id="Oc8-xT-iW5"/>
                     <connections>
                         <action selector="update:" target="-2" id="6Er-9Z-JAe"/>
                         <binding destination="qOh-Gs-cUO" name="value" keyPath="values.com.eweracs.inktrapeze.depth" id="dFg-WW-DgE"/>
