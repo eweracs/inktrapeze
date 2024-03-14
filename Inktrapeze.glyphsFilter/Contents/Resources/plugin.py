@@ -404,7 +404,6 @@ class Inktrapeze(FilterWithDialog):
 		path.nodes.insert(node.index, GSNode(offcurve_2, OFFCURVE))
 		path.nodes.insert(node.index + 1, GSNode(offcurve_3, OFFCURVE))
 		path.nodes.insert(node.index + 1, GSNode(offcurve_4, OFFCURVE))
-		return
 
 	@objc.python_method
 	def make_straight_inktrap(self, node, intersection1, intersection2):
