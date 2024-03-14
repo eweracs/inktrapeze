@@ -406,40 +406,6 @@ class Inktrapeze(FilterWithDialog):
 		path.nodes.insert(node.index + 1, GSNode(offcurve_4, OFFCURVE))
 		return
 
-		# find the point which is on the extension of the line from intersection_b to offcurve_1
-		reference_1 = NSPoint(offcurve_1.x + (offcurve_1.x - intersection_b.x),
-		                      offcurve_1.y + (offcurve_1.y - intersection_b.y))
-
-		# find the point which is one third of the way from the selected node to intersection_b
-		reference_2 = NSPoint(node.position.x - (node.position.x - intersection_b.x) / 3,
-		                      node.position.y - (node.position.y - intersection_b.y) / 3)
-
-		offcurve_2 = NSPoint((reference_1.x + reference_2.x) / 2, (reference_1.y + reference_2.y) / 2)
-
-		path.nodes.insert(node.index, GSNode(offcurve_1, OFFCURVE))
-		path.nodes[node.index - 2].smooth = True
-		path.nodes.insert(node.index, GSNode(offcurve_2, OFFCURVE))
-		node.type = CURVE
-
-		# find the point which is on the extension of the line from next_node to intersection_c. The extra
-		# distance from the intersection to the new point is relative to depth and the distance of the selected
-		# node to the intersection
-		distance_factor = dist([node.position.x, node.position.y], [intersection_c.x, intersection_c.y]) / dist([
-			intersection_c.x, intersection_c.y], [next_node.position.x, next_node.position.y])
-
-		offcurve_3 = NSPoint(intersection_c.x + (intersection_c.x - next_node.position.x) * distance_factor / 3,
-		                     intersection_c.y + (intersection_c.y - next_node.position.y) * distance_factor / 3)
-		reference_3 = NSPoint(offcurve_3.x + (offcurve_3.x - intersection_c.x),
-		                      offcurve_3.y + (offcurve_3.y - intersection_c.y))
-		reference_4 = NSPoint(node.position.x - (node.position.x - intersection_c.x) / 3,
-		                      node.position.y - (node.position.y - intersection_c.y) / 3)
-		offcurve_4 = NSPoint((reference_3.x + reference_4.x) / 2, (reference_3.y + reference_4.y) / 2)
-
-		path.nodes.insert(node.index + 1, GSNode(offcurve_3, OFFCURVE))
-		path.nodes[node.index + 2].smooth = True
-		path.nodes.insert(node.index + 1, GSNode(offcurve_4, OFFCURVE))
-		intersection_c_node.type = CURVE
-
 	@objc.python_method
 	def make_straight_inktrap(self, node, intersection1, intersection2):
 		pass
