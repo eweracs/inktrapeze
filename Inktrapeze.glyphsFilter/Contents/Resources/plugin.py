@@ -27,9 +27,9 @@
 
 from __future__ import division, print_function, unicode_literals
 import objc
-from GlyphsApp import Glyphs, GSNode, OFFCURVE, distance, DRAWFOREGROUND
+from GlyphsApp import Glyphs, GSNode, CURVE, OFFCURVE, distance, DRAWFOREGROUND
 from GlyphsApp.plugins import FilterWithDialog
-from math import sqrt, dist, sin, acos, atan2, degrees, radians, cos, pi
+from math import sqrt, dist, sin, acos, atan2, degrees, radians, cos
 from Foundation import NSPoint, NSColor, NSColor, NSBezierPath, NSRect
 
 
@@ -176,8 +176,6 @@ class Inktrapeze(FilterWithDialog):
 		# Calculate the angle of the line between the selected node and the next node
 		angle_next_node = self.calculate_angle(node, next_node)
 
-		print(round(angle_at_current_node), round((angle_prev_node - angle_next_node) / 2))
-
 		# Construct a circle with the diameter of the aperture and see how far it can be pushed into the triangle at the
 		# selected node.
 		# Then calculate the distance from the intersection of the circle with the right line to the intersection with
@@ -291,6 +289,10 @@ class Inktrapeze(FilterWithDialog):
 		return NSPoint((point1.x + point2.x) / 2, (point1.y + point2.y) / 2)
 
 	@objc.python_method
+	def b_for_a_alpha_trisosceles_trapezoid(self, a, alpha):
+		return(a / (2 * cos(radians(alpha)) + 1))
+
+	@objc.python_method
 	def calculate_new_main_node_position(self, node, centre_of_circle, distance_circle_centre_to_node, aperture,
 	                                     threshold, depth):
 		# multiply the distance from the node's current position to the threshold ring by the depth factor, this will
@@ -356,17 +358,53 @@ class Inktrapeze(FilterWithDialog):
 
 	@objc.python_method
 	def make_curved_inktrap(self, node, prev_node, next_node, prev_intersection, next_intersection):
-		angle_at_intersection = self.calculate_angle_at_node(GSNode(prev_intersection), prev_node, node)
-		print("__ angle_at_intersection", angle_at_intersection)
-		return
-		# find the point which is on the extension of the line from prev_node to intersection_b. The extra
-		# distance from the intersection to the new point is relative to depth and the distance of the selected
-		# node to the intersection
-		distance_factor = dist([node.position.x, node.position.y], [intersection_b.x, intersection_b.y]) \
-		                  / dist([intersection_b.x, intersection_b.y], [prev_node.position.x, prev_node.position.y])
+		angle_at_prev_intersection = 180 - self.calculate_angle_at_node(GSNode(prev_intersection), prev_node, node)
+		previous_line_angle = self.calculate_angle(prev_node, GSNode(prev_intersection))
 
-		offcurve_1 = NSPoint(intersection_b.x + (intersection_b.x - prev_node.position.x) * distance_factor / 3,
-		                     intersection_b.y + (intersection_b.y - prev_node.position.y) * distance_factor / 3)
+		angle_at_next_intersection = 180 - self.calculate_angle_at_node(GSNode(next_intersection), node, next_node)
+		next_line_angle = self.calculate_angle(next_node, GSNode(next_intersection))
+		curve_segment_thirds = self.b_for_a_alpha_trisosceles_trapezoid(
+			distance(node.position, prev_intersection),
+			angle_at_prev_intersection
+		)
+
+		offcurve_1 = self.position_for_angle_distance(
+			GSNode(prev_intersection),
+			previous_line_angle,
+			curve_segment_thirds
+		)
+
+		offcurve_2 = self.position_for_angle_distance(
+			GSNode(offcurve_1),
+			previous_line_angle + angle_at_prev_intersection,
+			curve_segment_thirds
+		)
+
+		offcurve_3 = self.position_for_angle_distance(
+			GSNode(next_intersection),
+			next_line_angle,
+			curve_segment_thirds
+		)
+
+		offcurve_4 = self.position_for_angle_distance(
+			GSNode(offcurve_3),
+			next_line_angle - angle_at_next_intersection,
+			curve_segment_thirds
+		)
+
+		path = node.parent
+
+		print(path.parent)
+
+		node.type = CURVE
+		node.nextNode.type = CURVE
+		node.prevNode.smooth = True
+		node.nextNode.smooth = True
+		path.nodes.insert(node.index, GSNode(offcurve_1, OFFCURVE))
+		path.nodes.insert(node.index, GSNode(offcurve_2, OFFCURVE))
+		path.nodes.insert(node.index + 1, GSNode(offcurve_3, OFFCURVE))
+		path.nodes.insert(node.index + 1, GSNode(offcurve_4, OFFCURVE))
+		return
 
 		# find the point which is on the extension of the line from intersection_b to offcurve_1
 		reference_1 = NSPoint(offcurve_1.x + (offcurve_1.x - intersection_b.x),
