@@ -27,9 +27,9 @@
 
 from __future__ import division, print_function, unicode_literals
 import objc
-from GlyphsApp import Glyphs, GSNode, CURVE, OFFCURVE, distance, DRAWFOREGROUND
+from GlyphsApp import Glyphs, GSNode, CURVE, LINE, OFFCURVE, distance, DRAWFOREGROUND
 from GlyphsApp.plugins import FilterWithDialog
-from math import sqrt, dist, sin, acos, atan2, degrees, radians, cos
+from math import sqrt, sin, acos, atan2, degrees, radians, cos
 from Foundation import NSPoint, NSColor, NSColor, NSBezierPath, NSRect
 
 
@@ -41,7 +41,6 @@ class Inktrapeze(FilterWithDialog):
 	apertureTextField = objc.IBOutlet()
 	straightRadio = objc.IBOutlet()
 	curvedRadio = objc.IBOutlet()
-	flatTopRadio = objc.IBOutlet()
 
 	circle_centres = None
 	intersections = None
@@ -77,6 +76,8 @@ class Inktrapeze(FilterWithDialog):
 			"com.eweracs.inktrapeze.depth": 1,
 			"com.eweracs.inktrapeze.straight": True,
 		})
+		self.straightRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.straight"])
+		self.curvedRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.curved"])
 		# Set focus to text field
 		self.apertureTextField.becomeFirstResponder()
 		Glyphs.addCallback(self.draw_calculations, DRAWFOREGROUND)
@@ -90,8 +91,6 @@ class Inktrapeze(FilterWithDialog):
 		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = bool(sender.state())
 		self.curvedRadio.setState_(False)
 		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = False
-		self.flatTopRadio.setState_(False)
-		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = False
 		self.update()
 
 	@objc.IBAction
@@ -99,17 +98,6 @@ class Inktrapeze(FilterWithDialog):
 		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = bool(sender.state())
 		self.straightRadio.setState_(False)
 		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = False
-		self.flatTopRadio.setState_(False)
-		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = False
-		self.update()
-
-	@objc.IBAction
-	def setFlatTop_(self, sender):
-		Glyphs.defaults["com.eweracs.inktrapeze.flatTop"] = bool(sender.state())
-		self.straightRadio.setState_(False)
-		Glyphs.defaults["com.eweracs.inktrapeze.straight"] = False
-		self.curvedRadio.setState_(False)
-		Glyphs.defaults["com.eweracs.inktrapeze.curved"] = False
 		self.update()
 
 	# Actual filter
@@ -289,6 +277,18 @@ class Inktrapeze(FilterWithDialog):
 		return(a / (2 * cos(radians(alpha)) + 1))
 
 	@objc.python_method
+	def point_for_percentage_between_points(self, point1, point2, percentage):
+		return NSPoint(
+			point1.x + (point2.x - point1.x) * percentage,
+			point1.y + (point2.y - point1.y) * percentage
+		)
+
+	@objc.python_method
+	def point_for_distance_between_points(self, point1, point2, points_distance):
+		percentage = points_distance / distance(point1, point2)
+		return self.point_for_percentage_between_points(point1, point2, percentage)
+
+	@objc.python_method
 	def calculate_new_main_node_position(self, node, centre_of_circle, distance_circle_centre_to_node, aperture,
 	                                     threshold, depth):
 		# multiply the distance from the node's current position to the threshold ring by the depth factor, this will
@@ -348,7 +348,15 @@ class Inktrapeze(FilterWithDialog):
 			self.make_curved_inktrap(node, prev_node, next_node, intersection_previous_node, intersection_next_node)
 
 		if flat_top:
-			self.add_flat_top(node)
+			self.add_flat_top(
+				node,
+				flat_top_size,
+				prev_node,
+				next_node,
+				intersection_previous_node,
+				intersection_next_node,
+				curved
+			)
 
 		return centre_of_circle, intersection_previous_node, intersection_next_node
 
@@ -404,29 +412,59 @@ class Inktrapeze(FilterWithDialog):
 		pass
 
 	@objc.python_method
-	def add_flat_top(self, node):
-		return
-		flat_top_size = float(Glyphs.defaults["com.eweracs.inktrapeze.flatTopSize"])
-		# divide flat_top_size by the aperture
-		move_factor = flat_top_size / aperture
-		# if the move factor is larger than 1, skip
-		if 1 > move_factor and flat_top_size > 0:
-			# calculate the coordinate of the point which is on the line intersection_b to new_node_position, at a
-			# percentage of move_factor away from new_node_position
-			reference_1 = NSPoint(new_node_position.x - (new_node_position.x - intersection_b.x) * move_factor,
-			                      new_node_position.y - (new_node_position.y - intersection_b.y) * move_factor)
-			# calculate the coordinate of the point which is on the line intersection_c to new_node_position, at a
-			# percentage of move_factor away from new_node_position
-			reference_2 = NSPoint(new_node_position.x - (new_node_position.x - intersection_c.x) * move_factor,
-			                      new_node_position.y - (new_node_position.y - intersection_c.y) * move_factor)
-			# insert these nodes on the paths, one after the current node and one before
-			path.insertNode_atIndex_(GSNode(reference_1), node.index)
-			path.insertNode_atIndex_(GSNode(reference_2), node.index + 1)
-		if flat_top_size > 0:
-			path.removeNode_(node)
-		if depth == 0:
-			path.removeNode_(intersection_b_node)
-			path.removeNode_(intersection_c_node)
+	def add_flat_top(
+			self,
+			node,
+			flat_top_size,
+			prev_node,
+			next_node,
+			intersection_previous_node,
+			intersection_next_node,
+			curved
+	):
+		# calculate the distance between the intersections
+		distance_between_intersections = distance(intersection_previous_node, intersection_next_node)
+
+		# calculate the percentage of the flat top size in relation to the distance between the intersections
+		percentage = flat_top_size / distance_between_intersections
+
+		# calculate the position on the line between the intersections, at the percentage of the flat top size
+		prev_line_top_node = self.point_for_percentage_between_points(
+			node, intersection_previous_node,
+			percentage
+		)
+		next_line_top_node = self.point_for_percentage_between_points(
+			node, intersection_next_node,
+			percentage
+		)
+
+		centre_between_top_nodes = self.centre_between_points(prev_line_top_node, next_line_top_node)
+
+		# extend these two points away from each other by the inverse percentage
+		extended_prev_line_top_node = self.point_for_distance_between_points(
+			centre_between_top_nodes, prev_line_top_node,
+			flat_top_size
+		)
+
+		extended_next_line_top_node = self.point_for_distance_between_points(
+			centre_between_top_nodes, next_line_top_node,
+			flat_top_size
+		)
+
+		path = node.parent
+		layer = path.parent
+		layer.openCornerAtNode_offset_(node, Glyphs.font.upm / 50)
+
+		if curved:
+			path.nodes.insert(node.index + 1, GSNode(extended_next_line_top_node, LINE))
+			path.nodes.insert(node.index + 1, GSNode(extended_prev_line_top_node, LINE))
+		else:
+			path.nodes.insert(node.index, GSNode(extended_prev_line_top_node))
+			path.nodes.insert(node.index, GSNode(extended_next_line_top_node))
+
+		# if the distance between the intersections is smaller than the flat top size, skip
+		if distance_between_intersections < flat_top_size:
+			return
 
 	@objc.python_method
 	def bezier_path_for_circle(self, x, y, radius):
