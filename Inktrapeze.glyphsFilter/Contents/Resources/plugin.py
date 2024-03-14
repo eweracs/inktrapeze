@@ -215,10 +215,6 @@ class Inktrapeze(FilterWithDialog):
 
 		# calculate the position of the centre of the circle. Depending on the path direction, the order of the angles
 		# used to calculate the position needs to be adjusted.
-
-		print("__ angle_prev_node, angle_next_node, angle_at_current_node", angle_prev_node, angle_next_node,
-		      angle_at_current_node)
-
 		angle = angle_prev_node if angle_prev_node < angle_next_node else angle_next_node
 		centre_of_circle = self.position_for_angle_distance(
 			node,
@@ -392,14 +388,12 @@ class Inktrapeze(FilterWithDialog):
 			curve_segment_thirds
 		)
 
-		path = node.parent
-
-		print(path.parent)
-
 		node.type = CURVE
 		node.nextNode.type = CURVE
 		node.prevNode.smooth = True
 		node.nextNode.smooth = True
+
+		path = node.parent
 		path.nodes.insert(node.index, GSNode(offcurve_1, OFFCURVE))
 		path.nodes.insert(node.index, GSNode(offcurve_2, OFFCURVE))
 		path.nodes.insert(node.index + 1, GSNode(offcurve_3, OFFCURVE))
