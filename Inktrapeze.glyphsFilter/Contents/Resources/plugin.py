@@ -289,6 +289,29 @@ class Inktrapeze(FilterWithDialog):
 		return self.point_for_percentage_between_points(point1, point2, percentage)
 
 	@objc.python_method
+	def make_line_horizontal(self, point1, point2, threshold):
+		if point1[1] == point2[1]:
+			return point1, point2
+
+		# calculate the angle of the line between the two points
+		angle = self.calculate_angle(GSNode(point1), GSNode(point2))
+
+		# if the angle is 0, 90 or 180, the line is already orthogonal
+		if angle % 90 == 0:
+			return point1, point2
+
+		# if the angle deviates by more than the threshold, return
+		if abs(0.5 - (89 % 90 / 90)) > threshold:
+			return point1, point2
+
+		# calculate the average y value of the two points
+		average_y = (point1[1] + point2[1]) / 2
+
+		# return two points with the same y value (rounded to the nearest integer)
+		return (point1[0], round(average_y)), (point2[0], round(average_y))
+
+
+	@objc.python_method
 	def calculate_new_main_node_position(self, node, centre_of_circle, distance_circle_centre_to_node, aperture,
 	                                     threshold, depth):
 		# multiply the distance from the node's current position to the threshold ring by the depth factor, this will
@@ -412,16 +435,8 @@ class Inktrapeze(FilterWithDialog):
 		pass
 
 	@objc.python_method
-	def add_flat_top(
-			self,
-			node,
-			flat_top_size,
-			prev_node,
-			next_node,
-			intersection_previous_node,
-			intersection_next_node,
-			curved
-	):
+	def add_flat_top(self, node, flat_top_size, prev_node, next_node, intersection_previous_node,
+	                 intersection_next_node, curved):
 		# calculate the distance between the intersections
 		distance_between_intersections = distance(intersection_previous_node, intersection_next_node)
 
@@ -449,6 +464,11 @@ class Inktrapeze(FilterWithDialog):
 		extended_next_line_top_node = self.point_for_distance_between_points(
 			centre_between_top_nodes, next_line_top_node,
 			flat_top_size
+		)
+
+		# make the top line horizontal
+		extended_prev_line_top_node, extended_next_line_top_node = self.make_line_horizontal(
+			extended_prev_line_top_node, extended_next_line_top_node, 0.05
 		)
 
 		path = node.parent
