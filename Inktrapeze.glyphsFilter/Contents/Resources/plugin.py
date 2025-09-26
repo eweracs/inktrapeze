@@ -75,6 +75,7 @@ class Inktrapeze(FilterWithDialog):
 			"com.eweracs.inktrapeze.threshold": 1,
 			"com.eweracs.inktrapeze.depth": 1,
 			"com.eweracs.inktrapeze.straight": True,
+			"com.eweracs.inktrapeze.curved": False,
 		})
 		self.straightRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.straight"])
 		self.curvedRadio.setState_(Glyphs.defaults["com.eweracs.inktrapeze.curved"])
@@ -301,7 +302,8 @@ class Inktrapeze(FilterWithDialog):
 			return point1, point2
 
 		# if the angle deviates by more than the threshold, return
-		if abs(0.5 - (89 % 90 / 90)) > threshold:
+		angle_deviation = min(abs(angle % 90), abs(90 - (angle % 90)))
+		if angle_deviation > threshold * 90:  # Convert threshold to degrees
 			return point1, point2
 
 		# calculate the average y value of the two points
